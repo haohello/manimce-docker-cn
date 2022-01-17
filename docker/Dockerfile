@@ -141,9 +141,10 @@ RUN pip install --no-cache .[jupyterlab,webgl_renderer]
 RUN pip install -r docs/requirements.txt
 
 # 更改国内源
+RUN sed -i 's/http:\/\/deb.debian.org\/debian/https:\/\/mirrors.tuna.tsinghua.edu.cn\/debian/g' /etc/apt/sources.list
 # RUN mv /etc/apt/sources.list /etc/apt/sources.list.bak
 # COPY docker/sources.list /etc/apt/
-# COPY docker/pip.conf /etc/
+COPY docker/pip.conf /etc/
 
 ARG NB_USER=manimuser
 ARG NB_UID=1000
