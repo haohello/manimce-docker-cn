@@ -1,15 +1,24 @@
-FROM manimcommunity/manim:latest
+FROM python:slim-bullseye
 
-USER root
-# 更改国内源
-RUN mv /etc/apt/sources.list /etc/apt/sources.list.bak
-COPY docker/sources.list /etc/apt/
-COPY docker/pip.conf /etc/
+RUN apt-get update -qq \
+    && apt-get install --no-install-recommends -y \
+        ffmpeg \
+        build-essential \
+        git \
+        gcc \
+        cmake \
+        libcairo2-dev \
+        libffi-dev \
+        libpango1.0-dev \
+        freeglut3-dev \
+        pkg-config \
+        make \
+        wget \
+        locales \
+        locales-all
 
 # 给debian设置中文支持
-RUN apt-get -qq update && apt-get install -y locales locales-all
-# RUN apt-get install -y fontconfig
-# RUN apt-get install -y ttf-mscorefonts-installer
+RUN apt-get -qq update && apt-get install -y 
 RUN localedef -c -f UTF-8 -i zh_CN zh_CN.utf8
 ENV LANG zh_CN.utf8
 
@@ -17,14 +26,20 @@ ENV LANG zh_CN.utf8
 RUN ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
 RUN echo 'Asia/Shanghai' >/etc/timezone
 
+# setup a minimal texlive installation
+COPY docker/texlive-profile.txt /tmp/
+ENV PATH=/usr/local/texlive/bin/armhf-linux:/usr/local/texlive/bin/aarch64-linux:/usr/local/texlive/bin/x86_64-linux:$PATH
+RUN wget -O /tmp/install-tl-unx.tar.gz https://mirrors.tuna.tsinghua.edu.cn/CTAN/systems/texlive/tlnet/install-tl-unx.tar.gz && \
+    mkdir /tmp/install-tl && \
+    tar -xzf /tmp/install-tl-unx.tar.gz -C /tmp/install-tl --strip-components=1 && \
+    /tmp/install-tl/install-tl --profile=/tmp/texlive-profile.txt \
+    && tlmgr option repository https://mirrors.tuna.tsinghua.edu.cn/CTAN/systems/texlive/tlnet/ \
+    && tlmgr update --self --all \
+    && tlmgr install scheme-full
 
-RUN tlmgr option repository https://mirrors.tuna.tsinghua.edu.cn/CTAN/systems/texlive/tlnet/
-RUN tlmgr update --self --all
-RUN tlmgr install scheme-full
 
 # 代码取自 https://github.com/thomasWeise/docker-texlive-full/blob/master/image/Dockerfile
-RUN echo "Texlive-full install Initial update." &&\
-    apt-get update &&\
+RUN apt-get update &&\
 # prevent doc and man pages from being installed
 # the idea is based on https://askubuntu.com/questions/129566
     echo "Preventing doc and man pages from being installed." &&\
@@ -117,13 +132,35 @@ RUN echo "Texlive-full install Initial update." &&\
 # 拷贝所有中文字体
 COPY docker/fonts/* /usr/share/fonts/
 
+# clone and build manim
+RUN git clone https://github.com.cnpmjs.org/ManimCommunity/manim.git
+RUN mv ./manim /opt/
+WORKDIR /opt/manim
+RUN pip install --no-cache .[jupyterlab,webgl_renderer]
+
+RUN pip install -r docs/requirements.txt
+
+# 更改国内源
+# RUN mv /etc/apt/sources.list /etc/apt/sources.list.bak
+# COPY docker/sources.list /etc/apt/
+# COPY docker/pip.conf /etc/
+
 ARG NB_USER=manimuser
+ARG NB_UID=1000
 ENV USER ${NB_USER}
+ENV NB_UID ${NB_UID}
 ENV HOME /manim
 
+RUN adduser --disabled-password \
+    --gecos "Default user" \
+    --uid ${NB_UID} \
+    ${NB_USER}
 
 # create working directory for user to mount local directory into
 WORKDIR ${HOME}
+USER root
+RUN chown -R ${NB_USER}:${NB_USER} ${HOME}
+RUN chmod 777 ${HOME}
 USER ${NB_USER}
 
 CMD [ "/bin/bash" ]
